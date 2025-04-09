@@ -1,5 +1,5 @@
 import asyncHandler from "express-async-handler"
-
+import User from "../models/User.js"
 import generateToken from "../utils/generateToken.js"
 
 // @desc    Auth user & get token
@@ -8,7 +8,7 @@ import generateToken from "../utils/generateToken.js"
 const authUser = asyncHandler(async (req, res) => {
   const { username, password } = req.body
 
-  const user = await User.findOne({ username, isActive: true })
+  const user = await User.findOne({ username })
 
   if (user && (await user.matchPassword(password))) {
     res.json({
@@ -18,209 +18,45 @@ const authUser = asyncHandler(async (req, res) => {
       userId: user.userId,
       username: user.username,
       role: user.role,
+      isActive: user.isActive,
       token: generateToken(user._id),
     })
   } else {
     res.status(401)
-    throw new Error("Invalid username or password, or account is not active")
+    throw new Error("Invalid username or password")
   }
 })
 
-// @desc    Get user profile
-// @route   GET /api/users/profile
-// @access  Private
-const getUserProfile = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id)
-
-  if (user) {
-    res.json({
-      _id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      userId: user.userId,
-      username: user.username,
-      role: user.role,
-    })
-  } else {
-    res.status(404)
-    throw new Error("User not found")
-  }
-})
-
-// @desc    Update user profile
-// @route   PUT /api/users/profile
-// @access  Private
-const updateUserProfile = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id)
-
-  if (user) {
-    user.firstName = req.body.firstName || user.firstName
-    user.lastName = req.body.lastName || user.lastName
-    user.phone = req.body.phone || user.phone
-
-    if (req.body.password) {
-      user.password = req.body.password
-    }
-
-    const updatedUser = await user.save()
-
-    res.json({
-      _id: updatedUser._id,
-      firstName: updatedUser.firstName,
-      lastName: updatedUser.lastName,
-      userId: updatedUser.userId,
-      username: updatedUser.username,
-      role: updatedUser.role,
-      token: generateToken(updatedUser._id),
-    })
-  } else {
-    res.status(404)
-    throw new Error("User not found")
-  }
-})
-
-// @desc    Create a new user
-// @route   POST /api/users
+// @desc    Get all deactivated users
+// @route   GET /api/users/deactivated
 // @access  Private/Admin
-const createUser = asyncHandler(async (req, res) => {
-  const { firstName, lastName, userId, phone, username, password, accountType } = req.body
-
-  const userExists = await User.findOne({ $or: [{ username }, { userId }] })
-
-  if (userExists) {
-    res.status(400)
-    throw new Error("User already exists")
-  }
-
-  const user = await User.create({
-    firstName,
-    lastName,
-    userId,
-    phone,
-    username,
-    password,
-    role: accountType,
-    isActive: true,
-  })
-
-  if (user) {
-    res.status(201).json({
-      _id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      userId: user.userId,
-      username: user.username,
-      role: user.role,
-    })
-  } else {
-    res.status(400)
-    throw new Error("Invalid user data")
-  }
+const getDeactivatedUsers = asyncHandler(async (req, res) => {
+  const users = await User.find({ isActive: false })
+  res.json(users)
 })
 
-// @desc    Get users by account type
-// @route   GET /api/users/type/:accountType
+// @desc    Get all active users
+// @route   GET /api/users/active
 // @access  Private/Admin
-const getUsersByType = asyncHandler(async (req, res) => {
-  const accountType = req.params.accountType
-  const users = await User.find({ role: accountType }).select("-password")
-
+const getActiveUsers = asyncHandler(async (req, res) => {
+  const users = await User.find({ isActive: true })
   res.json(users)
 })
 
 // @desc    Toggle user active status
-// @route   PUT /api/users/toggle-status/:username
+// @route   PUT /api/users/:id/toggle-status
 // @access  Private/Admin
 const toggleUserStatus = asyncHandler(async (req, res) => {
-  const username = req.params.username
-  const user = await User.findOne({ username })
+  const user = await User.findById(req.params.id)
 
   if (user) {
     user.isActive = !user.isActive
     const updatedUser = await user.save()
-
-    res.json({
-      _id: updatedUser._id,
-      username: updatedUser.username,
-      isActive: updatedUser.isActive,
-    })
+    res.json(updatedUser)
   } else {
     res.status(404)
     throw new Error("User not found")
   }
 })
 
-// @desc    Get user by ID
-// @route   GET /api/users/:id
-// @access  Private/Admin
-const getUserById = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id).select("-password")
-
-  if (user) {
-    res.json(user)
-  } else {
-    res.status(404)
-    throw new Error("User not found")
-  }
-})
-
-// @desc    Update user
-// @route   PUT /api/users/:id
-// @access  Private/Admin
-const updateUser = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id)
-
-  if (user) {
-    user.firstName = req.body.firstName || user.firstName
-    user.lastName = req.body.lastName || user.lastName
-    user.userId = req.body.userId || user.userId
-    user.phone = req.body.phone || user.phone
-    user.username = req.body.username || user.username
-    user.role = req.body.role || user.role
-
-    const updatedUser = await user.save()
-
-    res.json({
-      _id: updatedUser._id,
-      firstName: updatedUser.firstName,
-      lastName: updatedUser.lastName,
-      userId: updatedUser.userId,
-      username: updatedUser.username,
-      role: updatedUser.role,
-    })
-  } else {
-    res.status(404)
-    throw new Error("User not found")
-  }
-})
-
-// @desc    Reset user password
-// @route   PUT /api/users/:id/reset-password
-// @access  Private/Admin
-const resetPassword = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id)
-
-  if (user) {
-    user.password = req.body.password
-
-    await user.save()
-
-    res.json({ message: "Password reset successfully" })
-  } else {
-    res.status(404)
-    throw new Error("User not found")
-  }
-})
-
-export {
-  authUser,
-  getUserProfile,
-  updateUserProfile,
-  createUser,
-  getUsersByType,
-  toggleUserStatus,
-  getUserById,
-  updateUser,
-  resetPassword,
-}
-
+export { authUser, getDeactivatedUsers, getActiveUsers, toggleUserStatus }
